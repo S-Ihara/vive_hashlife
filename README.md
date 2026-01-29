@@ -1,15 +1,15 @@
 # vive_hashlife
 
-Conway's Game of Life implementation in Rust with WebAssembly, deployable to GitHub Pages.
+Conway's Game of Life using the HashLife algorithm in Rust with WebAssembly, deployable to GitHub Pages.
 
 ![Game of Life UI](https://github.com/user-attachments/assets/b169aefc-fa84-405a-8720-3f6dc1057127)
 
 ## Features
 
-- 🦀 **Fast Rust implementation** - Core Game of Life logic written in Rust for performance
+- 🦀 **HashLife Algorithm** - Implements Bill Gosper's HashLife with quadtree and memoization
 - 🌐 **WebAssembly** - Runs in the browser via WASM with near-native speed
 - 🎨 **Interactive UI** - Click to toggle cells, real-time visualization
-- ⚡ **Adjustable speed** - Control simulation FPS from 1 to 60
+- ⚡ **Exponential speedup** - Memoization provides massive performance gains for large patterns
 - 🔍 **Zoom control** - Adjust cell size for better visibility
 - 📐 **Classic patterns** - Pre-loaded patterns including:
   - Glider
@@ -94,20 +94,39 @@ vive_hashlife/
         └── deploy.yml   # GitHub Pages deployment
 ```
 
-## Algorithm
+## HashLife Algorithm
 
-This implementation uses a straightforward HashMap-based approach for cell storage, making it efficient for sparse patterns and easy to understand. The core algorithm:
+This implementation uses the HashLife algorithm invented by Bill Gosper in 1984. HashLife achieves exponential speedup for large patterns through two key techniques:
 
-1. Stores only living cells in a HashMap
-2. Checks a bounding box around all living cells plus a margin
-3. Applies Conway's Game of Life rules:
-   - Any live cell with 2 or 3 live neighbors survives
-   - Any dead cell with exactly 3 live neighbors becomes alive
-   - All other cells die or stay dead
+### Quadtree Structure
+- Universe represented as a recursive quadtree
+- Each node has 4 quadrants (NW, NE, SW, SE)
+- Nodes are immutable and share structure via `Rc<Node>`
 
-## Deployment
+### Memoization
+- Results for identical subtrees are cached
+- Avoids recomputing the same patterns
+- Provides exponential speedup for repetitive structures
 
-The project automatically deploys to GitHub Pages when changes are pushed to the `main` branch via GitHub Actions.
+### Multi-Step Advancement
+The algorithm advances by 2^(level-2) generations per step:
+- Level 3 (8×8): 2 generations per step
+- Level 4 (16×16): 4 generations per step  
+- Level 5 (32×32): 8 generations per step
+
+This makes HashLife extremely efficient for simulating large, stable patterns over many generations.
+
+### Base Case
+For a 4×4 region (level 2), the algorithm:
+1. Extracts the 16 cells
+2. Applies Conway's rules to the center 2×2
+3. Returns the result after 1 generation
+
+### Recursive Case
+For larger regions (level > 2):
+1. Divide into 9 overlapping subregions
+2. Recursively compute next generation for each
+3. Combine results into 4 output quadrants
 
 ## Conway's Game of Life Rules
 
@@ -117,6 +136,10 @@ The Game of Life is a cellular automaton devised by mathematician John Conway. I
 2. Any live cell with 2 or 3 live neighbors lives on to the next generation
 3. Any live cell with more than 3 live neighbors dies (overpopulation)
 4. Any dead cell with exactly 3 live neighbors becomes a live cell (reproduction)
+
+## Deployment
+
+The project automatically deploys to GitHub Pages when changes are pushed to the `main` branch via GitHub Actions.
 
 ## License
 
@@ -128,5 +151,6 @@ Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ## Acknowledgments
 
+- Bill Gosper for inventing the HashLife algorithm
 - John Conway for creating the Game of Life
 - The Rust and WebAssembly communities for excellent tooling
