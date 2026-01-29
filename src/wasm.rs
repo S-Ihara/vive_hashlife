@@ -38,8 +38,7 @@ impl WasmUniverse {
     }
 
     pub fn clear(&mut self) {
-        let level = self.universe.root.level;
-        self.universe = Universe::new(level);
+        self.universe = Universe::new(16);
     }
 
     #[wasm_bindgen(js_name = setCells)]
