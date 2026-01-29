@@ -17,13 +17,12 @@ pub struct Node {
 enum NodeContent {
     /// Leaf node containing a single cell state
     Leaf(bool),
-    /// Inner node with 4 quadrants (NW, NE, SW, SE) and optional result cache
+    /// Inner node with 4 quadrants (NW, NE, SW, SE)
     Inner {
         nw: Rc<Node>,
         ne: Rc<Node>,
         sw: Rc<Node>,
         se: Rc<Node>,
-        result: Option<Rc<Node>>,
     },
 }
 
@@ -86,25 +85,12 @@ impl Node {
         Node {
             level: nw.level + 1,
             population,
-            content: NodeContent::Inner { nw, ne, sw, se, result: None },
+            content: NodeContent::Inner { nw, ne, sw, se },
         }
     }
 
     fn is_alive(&self) -> bool {
         matches!(self.content, NodeContent::Leaf(true))
-    }
-
-    fn get_result(&self) -> Option<Rc<Node>> {
-        match &self.content {
-            NodeContent::Inner { result, .. } => result.clone(),
-            _ => None,
-        }
-    }
-
-    fn set_result(&mut self, res: Rc<Node>) {
-        if let NodeContent::Inner { result, .. } = &mut self.content {
-            *result = Some(res);
-        }
     }
 }
 
@@ -160,6 +146,7 @@ pub struct Universe {
     root: Rc<Node>,
     cache: NodeCache,
     generation: u64,
+    result_cache: HashMap<usize, Rc<Node>>,
 }
 
 impl Universe {
@@ -173,6 +160,7 @@ impl Universe {
             root,
             cache,
             generation: 0,
+            result_cache: HashMap::new(),
         }
     }
 
@@ -301,12 +289,17 @@ impl Universe {
     }
 
     fn next_generation(&mut self, node: &Rc<Node>) -> Rc<Node> {
-        if let Some(result) = node.get_result() {
-            return result;
+        let node_ptr = Rc::as_ptr(node) as usize;
+        
+        // Check result cache
+        if let Some(result) = self.result_cache.get(&node_ptr) {
+            return result.clone();
         }
 
         if node.level == 2 {
-            return self.compute_level2(node);
+            let result = self.compute_level2(node);
+            self.result_cache.insert(node_ptr, result.clone());
+            return result;
         }
 
         let NodeContent::Inner { nw, ne, sw, se, .. } = &node.content else {
@@ -339,8 +332,8 @@ impl Universe {
 
         let result = self.cache.get_inner(result_nw, result_ne, result_sw, result_se);
 
-        // Cache the result (note: we need to clone node and set result on the clone)
-        // For simplicity, we'll cache in a separate HashMap
+        // Cache the result
+        self.result_cache.insert(node_ptr, result.clone());
         result
     }
 
