@@ -4,6 +4,7 @@ use crate::hashlife::Universe;
 #[wasm_bindgen]
 pub struct WasmUniverse {
     universe: Universe,
+    size_level: usize,
 }
 
 #[wasm_bindgen]
@@ -12,6 +13,7 @@ impl WasmUniverse {
     pub fn new(size_level: usize) -> WasmUniverse {
         WasmUniverse {
             universe: Universe::new(size_level),
+            size_level,
         }
     }
 
@@ -38,7 +40,7 @@ impl WasmUniverse {
     }
 
     pub fn clear(&mut self) {
-        self.universe = Universe::new(16);
+        self.universe = Universe::new(self.size_level);
     }
 
     #[wasm_bindgen(js_name = setCells)]
