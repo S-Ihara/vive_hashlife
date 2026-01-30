@@ -247,7 +247,7 @@
                         <span>Cell Size</span>
                         <span id="cellSizeValue">8</span>
                     </label>
-                    <input type="range" id="cellSizeSlider" min="4" max="20" value="8">
+                    <input type="range" id="cellSizeSlider" min="2" max="40" value="8">
                 </div>
             </div>
 
@@ -282,6 +282,7 @@
                 <h3>Help</h3>
                 <div class="help">
                     <kbd>Click</kbd> to toggle cells<br>
+                    <kbd>Mouse Wheel</kbd> to zoom in/out<br>
                     <kbd>Space</kbd> to play/pause<br>
                     <kbd>S</kbd> to step<br>
                     <kbd>C</kbd> to clear<br>
@@ -404,6 +405,22 @@
                 universe.setCell(x, y, !alive);
                 render();
             });
+
+            // Mouse wheel zoom
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                
+                // Determine zoom direction: negative deltaY means zoom in, positive means zoom out
+                const zoomDelta = e.deltaY > 0 ? -1 : 1;
+                const newCellSize = Math.max(2, Math.min(40, cellSize + zoomDelta));
+                
+                if (newCellSize !== cellSize) {
+                    cellSize = newCellSize;
+                    document.getElementById('cellSizeValue').textContent = cellSize;
+                    document.getElementById('cellSizeSlider').value = cellSize;
+                    resizeCanvas();
+                }
+            }, { passive: false });
 
             // Keyboard
             document.addEventListener('keydown', (e) => {
