@@ -17,13 +17,12 @@ pub struct Node {
 enum NodeContent {
     /// Leaf node containing a single cell state
     Leaf(bool),
-    /// Inner node with 4 quadrants (NW, NE, SW, SE) and optional result cache
+    /// Inner node with 4 quadrants (NW, NE, SW, SE)
     Inner {
         nw: Rc<Node>,
         ne: Rc<Node>,
         sw: Rc<Node>,
         se: Rc<Node>,
-        result: Option<Rc<Node>>,
     },
 }
 
@@ -86,25 +85,12 @@ impl Node {
         Node {
             level: nw.level + 1,
             population,
-            content: NodeContent::Inner { nw, ne, sw, se, result: None },
+            content: NodeContent::Inner { nw, ne, sw, se },
         }
     }
 
     fn is_alive(&self) -> bool {
         matches!(self.content, NodeContent::Leaf(true))
-    }
-
-    fn get_result(&self) -> Option<Rc<Node>> {
-        match &self.content {
-            NodeContent::Inner { result, .. } => result.clone(),
-            _ => None,
-        }
-    }
-
-    fn set_result(&mut self, res: Rc<Node>) {
-        if let NodeContent::Inner { result, .. } = &mut self.content {
-            *result = Some(res);
-        }
     }
 }
 
@@ -160,6 +146,7 @@ pub struct Universe {
     root: Rc<Node>,
     cache: NodeCache,
     generation: u64,
+    result_cache: HashMap<usize, Rc<Node>>,
 }
 
 impl Universe {
@@ -173,6 +160,7 @@ impl Universe {
             root,
             cache,
             generation: 0,
+            result_cache: HashMap::new(),
         }
     }
 
@@ -301,12 +289,17 @@ impl Universe {
     }
 
     fn next_generation(&mut self, node: &Rc<Node>) -> Rc<Node> {
-        if let Some(result) = node.get_result() {
-            return result;
+        let node_ptr = Rc::as_ptr(node) as usize;
+        
+        // Check result cache
+        if let Some(result) = self.result_cache.get(&node_ptr) {
+            return result.clone();
         }
 
         if node.level == 2 {
-            return self.compute_level2(node);
+            let result = self.compute_level2(node);
+            self.result_cache.insert(node_ptr, result.clone());
+            return result;
         }
 
         let NodeContent::Inner { nw, ne, sw, se, .. } = &node.content else {
@@ -314,10 +307,10 @@ impl Universe {
         };
 
         // Pre-compute center nodes
-        let center_nw_ne = self.center_subnode(nw, ne);
-        let center_nw_sw = self.center_subnode(nw, sw);
-        let center_ne_se = self.center_subnode(ne, se);
-        let center_sw_se = self.center_subnode(sw, se);
+        let center_nw_ne = self.center_subnode_horizontal(nw, ne);
+        let center_nw_sw = self.center_subnode_vertical(nw, sw);
+        let center_ne_se = self.center_subnode_vertical(ne, se);
+        let center_sw_se = self.center_subnode_horizontal(sw, se);
         let center = self.center_node(node);
 
         // Compute the 9 overlapping subnodes
@@ -331,16 +324,22 @@ impl Universe {
         let n21 = self.next_generation(&center_sw_se);
         let n22 = self.next_generation(se);
 
-        // Combine results into 4 quadrants
-        let result_nw = self.cache.get_inner(n00, n01.clone(), n10.clone(), n11.clone());
-        let result_ne = self.cache.get_inner(n01, n02, n11.clone(), n12.clone());
-        let result_sw = self.cache.get_inner(n10, n11.clone(), n20, n21.clone());
-        let result_se = self.cache.get_inner(n11, n12, n21, n22);
+        // Combine results into 4 intermediate quadrants
+        let intermediate_nw = self.cache.get_inner(n00, n01.clone(), n10.clone(), n11.clone());
+        let intermediate_ne = self.cache.get_inner(n01, n02, n11.clone(), n12.clone());
+        let intermediate_sw = self.cache.get_inner(n10, n11.clone(), n20, n21.clone());
+        let intermediate_se = self.cache.get_inner(n11, n12, n21, n22);
+
+        // Advance the 4 intermediate quadrants one more time
+        let result_nw = self.next_generation(&intermediate_nw);
+        let result_ne = self.next_generation(&intermediate_ne);
+        let result_sw = self.next_generation(&intermediate_sw);
+        let result_se = self.next_generation(&intermediate_se);
 
         let result = self.cache.get_inner(result_nw, result_ne, result_sw, result_se);
 
-        // Cache the result (note: we need to clone node and set result on the clone)
-        // For simplicity, we'll cache in a separate HashMap
+        // Cache the result
+        self.result_cache.insert(node_ptr, result.clone());
         result
     }
 
@@ -362,15 +361,27 @@ impl Universe {
         )
     }
 
-    fn center_subnode(&mut self, a: &Rc<Node>, b: &Rc<Node>) -> Rc<Node> {
-        let NodeContent::Inner { ne: a_ne, se: a_se, .. } = &a.content else { unreachable!(); };
-        let NodeContent::Inner { nw: b_nw, sw: b_sw, .. } = &b.content else { unreachable!(); };
+    fn center_subnode_horizontal(&mut self, left: &Rc<Node>, right: &Rc<Node>) -> Rc<Node> {
+        let NodeContent::Inner { ne: left_ne, se: left_se, .. } = &left.content else { unreachable!(); };
+        let NodeContent::Inner { nw: right_nw, sw: right_sw, .. } = &right.content else { unreachable!(); };
 
         self.cache.get_inner(
-            a_ne.clone(),
-            b_nw.clone(),
-            a_se.clone(),
-            b_sw.clone(),
+            left_ne.clone(),
+            right_nw.clone(),
+            left_se.clone(),
+            right_sw.clone(),
+        )
+    }
+
+    fn center_subnode_vertical(&mut self, top: &Rc<Node>, bottom: &Rc<Node>) -> Rc<Node> {
+        let NodeContent::Inner { sw: top_sw, se: top_se, .. } = &top.content else { unreachable!(); };
+        let NodeContent::Inner { nw: bottom_nw, ne: bottom_ne, .. } = &bottom.content else { unreachable!(); };
+
+        self.cache.get_inner(
+            top_sw.clone(),
+            top_se.clone(),
+            bottom_nw.clone(),
+            bottom_ne.clone(),
         )
     }
 
