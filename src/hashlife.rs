@@ -270,9 +270,8 @@ impl Universe {
         self.root = self.cache.get_inner(new_nw, new_ne, new_sw, new_se);
     }
 
-    /// Step forward in time using HashLife algorithm
-    /// Note: This advances by 2^(level-2) generations per call
-    /// For a typical level-3 universe, this is 2 generations per step
+    /// Step forward in time by exactly one generation
+    /// This ensures proper step-by-step progression for UI display
     pub fn step(&mut self) {
         while self.root.level < 3 {
             if self.root.population == 0 {
@@ -283,9 +282,104 @@ impl Universe {
         }
 
         let root = self.root.clone();
-        let steps = 1u64 << (self.root.level - 2);
-        self.root = self.next_generation(&root);
-        self.generation += steps;
+        let result = self.next_generation_single(&root);
+        
+        // The result is at level (root.level - 1), representing the center portion
+        // We need to embed it back at the original level with empty borders
+        
+        // Extract quadrants from the result (each at level result.level - 1)
+        let NodeContent::Inner { nw: r_nw, ne: r_ne, sw: r_sw, se: r_se, .. } = &result.content else {
+            unreachable!();
+        };
+        
+        // Create empty border at the same level as result's quadrants
+        let border = self.cache.get_empty(result.level - 1);
+        
+        // Build new quadrants at level result.level by adding borders
+        let new_nw = self.cache.get_inner(border.clone(), border.clone(), border.clone(), r_nw.clone());
+        let new_ne = self.cache.get_inner(border.clone(), border.clone(), r_ne.clone(), border.clone());
+        let new_sw = self.cache.get_inner(border.clone(), r_sw.clone(), border.clone(), border.clone());
+        let new_se = self.cache.get_inner(r_se.clone(), border.clone(), border.clone(), border.clone());
+        
+        // Combine into new root at original level
+        self.root = self.cache.get_inner(new_nw, new_ne, new_sw, new_se);
+        self.generation += 1;
+    }
+
+    /// Compute the next generation advancing by exactly 1 step
+    /// Unlike next_generation() which advances by 2^(level-2) steps,
+    /// this always advances by exactly 1 generation
+    fn next_generation_single(&mut self, node: &Rc<Node>) -> Rc<Node> {
+        let node_ptr = Rc::as_ptr(node) as usize;
+        
+        // Check result cache (we can reuse the same cache as next_generation
+        // since we're computing a different operation, but this needs to be distinguished)
+        // For simplicity, we'll compute without caching for now, but this could be optimized
+        // by using a separate cache or a tagged cache key
+        
+        if node.level == 2 {
+            // Base case: compute_level2 advances by 1 generation
+            return self.compute_level2(node);
+        }
+
+        let NodeContent::Inner { nw, ne, sw, se, .. } = &node.content else {
+            unreachable!();
+        };
+
+        // For level > 2, we need to compute 1 generation for a result at level (node.level - 1)
+        // We do this by applying the level-2 computation to the 9 overlapping level-2 regions
+        
+        // Get the 9 overlapping level-2 subnodes that cover the interior
+        let center_nw_ne = self.center_subnode_horizontal(nw, ne);
+        let center_nw_sw = self.center_subnode_vertical(nw, sw);
+        let center_ne_se = self.center_subnode_vertical(ne, se);
+        let center_sw_se = self.center_subnode_horizontal(sw, se);
+        let center = self.center_node(node);
+
+        // Recursively compute 1 generation for each of the 9 regions
+        let n00 = self.next_generation_single(nw);
+        let n01 = self.next_generation_single(&center_nw_ne);
+        let n02 = self.next_generation_single(ne);
+        let n10 = self.next_generation_single(&center_nw_sw);
+        let n11 = self.next_generation_single(&center);
+        let n12 = self.next_generation_single(&center_ne_se);
+        let n20 = self.next_generation_single(sw);
+        let n21 = self.next_generation_single(&center_sw_se);
+        let n22 = self.next_generation_single(se);
+
+        // Now assemble these 9 results into a result at level (node.level - 1)
+        // Each of the 9 results is at level (node.level - 2)
+        // We need to extract their inner quarters and combine them
+        
+        // Helper to get quadrant subnodes
+        fn get_quadrants(node: &Rc<Node>) -> (Rc<Node>, Rc<Node>, Rc<Node>, Rc<Node>) {
+            if let NodeContent::Inner { nw, ne, sw, se, .. } = &node.content {
+                (nw.clone(), ne.clone(), sw.clone(), se.clone())
+            } else {
+                unreachable!()
+            }
+        }
+
+        let (_, _, _, n00_se) = get_quadrants(&n00);
+        let (_, _, n01_sw, n01_se) = get_quadrants(&n01);
+        let (_, _, n02_sw, _) = get_quadrants(&n02);
+        
+        let (_, n10_ne, _, n10_se) = get_quadrants(&n10);
+        let (n11_nw, n11_ne, n11_sw, n11_se) = get_quadrants(&n11);
+        let (n12_nw, _, n12_sw, _) = get_quadrants(&n12);
+        
+        let (_, n20_ne, _, _) = get_quadrants(&n20);
+        let (n21_nw, n21_ne, _, _) = get_quadrants(&n21);
+        let (n22_nw, _, _, _) = get_quadrants(&n22);
+
+        // Build result quadrants at level (node.level - 2)
+        let result_nw = self.cache.get_inner(n00_se, n01_sw, n10_ne, n11_nw);
+        let result_ne = self.cache.get_inner(n01_se, n02_sw, n11_ne, n12_nw);
+        let result_sw = self.cache.get_inner(n10_se, n11_sw, n20_ne, n21_nw);
+        let result_se = self.cache.get_inner(n11_se, n12_sw, n21_ne, n22_nw);
+
+        // Return result at level (node.level - 1)
+        self.cache.get_inner(result_nw, result_ne, result_sw, result_se)
     }
 
     fn next_generation(&mut self, node: &Rc<Node>) -> Rc<Node> {
@@ -496,12 +590,25 @@ mod tests {
         universe.set_cell(2, 0, true);
         
         assert_eq!(universe.population(), 3);
+        assert_eq!(universe.generation(), 0);
         
-        // With HashLife at level 3, step advances by 2 generations
-        // So horizontal blinker -> vertical (1 step) -> horizontal (2 steps)
+        // Step now advances by exactly 1 generation
+        // Horizontal blinker -> vertical (1 step)
         universe.step();
         
-        // After 2 generations, should be back to horizontal
+        assert_eq!(universe.generation(), 1);
+        // After 1 generation, should be vertical
+        assert!(!universe.get_cell(0, 0));
+        assert!(universe.get_cell(1, 0));
+        assert!(!universe.get_cell(2, 0));
+        assert!(universe.get_cell(1, -1));
+        assert!(universe.get_cell(1, 1));
+        assert_eq!(universe.population(), 3);
+        
+        // Step again -> back to horizontal (2 steps total)
+        universe.step();
+        
+        assert_eq!(universe.generation(), 2);
         assert!(universe.get_cell(0, 0));
         assert!(universe.get_cell(1, 0));
         assert!(universe.get_cell(2, 0));
