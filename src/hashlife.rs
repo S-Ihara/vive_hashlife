@@ -310,6 +310,13 @@ impl Universe {
     /// Unlike next_generation() which advances by 2^(level-2) steps,
     /// this always advances by exactly 1 generation
     fn next_generation_single(&mut self, node: &Rc<Node>) -> Rc<Node> {
+        let node_ptr = Rc::as_ptr(node) as usize;
+        
+        // Check result cache (we can reuse the same cache as next_generation
+        // since we're computing a different operation, but this needs to be distinguished)
+        // For simplicity, we'll compute without caching for now, but this could be optimized
+        // by using a separate cache or a tagged cache key
+        
         if node.level == 2 {
             // Base case: compute_level2 advances by 1 generation
             return self.compute_level2(node);
