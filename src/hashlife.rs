@@ -98,6 +98,8 @@ impl Node {
 pub struct NodeCache {
     leaves: [Rc<Node>; 2],
     inner_cache: HashMap<(usize, usize, usize, usize), Rc<Node>>,
+    /// Cache for next_generation_single results (node pointer -> result node)
+    result_cache: HashMap<usize, Rc<Node>>,
 }
 
 impl NodeCache {
@@ -108,7 +110,12 @@ impl NodeCache {
                 Rc::new(Node::leaf(true)),
             ],
             inner_cache: HashMap::new(),
+            result_cache: HashMap::new(),
         }
+    }
+
+    fn clear_result_cache(&mut self) {
+        self.result_cache.clear();
     }
 
     fn get_leaf(&self, alive: bool) -> Rc<Node> {
@@ -279,6 +286,9 @@ impl Universe {
             self.expand();
         }
 
+        // Clear result cache before each step since cell states change
+        self.cache.clear_result_cache();
+
         let root = self.root.clone();
         let result = self.next_generation_single(&root);
         
@@ -310,6 +320,12 @@ impl Universe {
         if node.level == 2 {
             // Base case: compute_level2 advances by 1 generation
             return self.compute_level2(node);
+        }
+
+        // Check if we already computed the result for this node
+        let node_key = Rc::as_ptr(node) as usize;
+        if let Some(cached_result) = self.cache.result_cache.get(&node_key) {
+            return cached_result.clone();
         }
 
         let NodeContent::Inner { nw, ne, sw, se, .. } = &node.content else {
@@ -369,7 +385,12 @@ impl Universe {
         let result_se = self.cache.get_inner(n11_se, n12_sw, n21_ne, n22_nw);
 
         // Return result at level (node.level - 1)
-        self.cache.get_inner(result_nw, result_ne, result_sw, result_se)
+        let result = self.cache.get_inner(result_nw, result_ne, result_sw, result_se);
+        
+        // Cache the result for this node
+        self.cache.result_cache.insert(node_key, result.clone());
+        
+        result
     }
 
     fn center_node(&mut self, node: &Rc<Node>) -> Rc<Node> {
