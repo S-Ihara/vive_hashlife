@@ -146,7 +146,6 @@ pub struct Universe {
     root: Rc<Node>,
     cache: NodeCache,
     generation: u64,
-    result_cache: HashMap<usize, Rc<Node>>,
 }
 
 impl Universe {
@@ -160,7 +159,6 @@ impl Universe {
             root,
             cache,
             generation: 0,
-            result_cache: HashMap::new(),
         }
     }
 
@@ -307,16 +305,8 @@ impl Universe {
     }
 
     /// Compute the next generation advancing by exactly 1 step
-    /// Unlike next_generation() which advances by 2^(level-2) steps,
-    /// this always advances by exactly 1 generation
+    /// This always advances by exactly 1 generation
     fn next_generation_single(&mut self, node: &Rc<Node>) -> Rc<Node> {
-        let node_ptr = Rc::as_ptr(node) as usize;
-        
-        // Check result cache (we can reuse the same cache as next_generation
-        // since we're computing a different operation, but this needs to be distinguished)
-        // For simplicity, we'll compute without caching for now, but this could be optimized
-        // by using a separate cache or a tagged cache key
-        
         if node.level == 2 {
             // Base case: compute_level2 advances by 1 generation
             return self.compute_level2(node);
@@ -380,61 +370,6 @@ impl Universe {
 
         // Return result at level (node.level - 1)
         self.cache.get_inner(result_nw, result_ne, result_sw, result_se)
-    }
-
-    fn next_generation(&mut self, node: &Rc<Node>) -> Rc<Node> {
-        let node_ptr = Rc::as_ptr(node) as usize;
-        
-        // Check result cache
-        if let Some(result) = self.result_cache.get(&node_ptr) {
-            return result.clone();
-        }
-
-        if node.level == 2 {
-            let result = self.compute_level2(node);
-            self.result_cache.insert(node_ptr, result.clone());
-            return result;
-        }
-
-        let NodeContent::Inner { nw, ne, sw, se, .. } = &node.content else {
-            unreachable!();
-        };
-
-        // Pre-compute center nodes
-        let center_nw_ne = self.center_subnode_horizontal(nw, ne);
-        let center_nw_sw = self.center_subnode_vertical(nw, sw);
-        let center_ne_se = self.center_subnode_vertical(ne, se);
-        let center_sw_se = self.center_subnode_horizontal(sw, se);
-        let center = self.center_node(node);
-
-        // Compute the 9 overlapping subnodes
-        let n00 = self.next_generation(nw);
-        let n01 = self.next_generation(&center_nw_ne);
-        let n02 = self.next_generation(ne);
-        let n10 = self.next_generation(&center_nw_sw);
-        let n11 = self.next_generation(&center);
-        let n12 = self.next_generation(&center_ne_se);
-        let n20 = self.next_generation(sw);
-        let n21 = self.next_generation(&center_sw_se);
-        let n22 = self.next_generation(se);
-
-        // Combine results into 4 intermediate quadrants
-        let intermediate_nw = self.cache.get_inner(n00, n01.clone(), n10.clone(), n11.clone());
-        let intermediate_ne = self.cache.get_inner(n01, n02, n11.clone(), n12.clone());
-        let intermediate_sw = self.cache.get_inner(n10, n11.clone(), n20, n21.clone());
-        let intermediate_se = self.cache.get_inner(n11, n12, n21, n22);
-
-        // Advance the 4 intermediate quadrants one more time
-        let result_nw = self.next_generation(&intermediate_nw);
-        let result_ne = self.next_generation(&intermediate_ne);
-        let result_sw = self.next_generation(&intermediate_sw);
-        let result_se = self.next_generation(&intermediate_se);
-
-        let result = self.cache.get_inner(result_nw, result_ne, result_sw, result_se);
-
-        // Cache the result
-        self.result_cache.insert(node_ptr, result.clone());
-        result
     }
 
     fn center_node(&mut self, node: &Rc<Node>) -> Rc<Node> {
