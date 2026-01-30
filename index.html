@@ -477,7 +477,10 @@
         }
 
         function animate() {
-            if (!isPlaying) return;
+            if (!isPlaying) {
+                animationId = null;
+                return;
+            }
             
             const currentTime = performance.now();
             const elapsed = currentTime - lastFrameTime;
