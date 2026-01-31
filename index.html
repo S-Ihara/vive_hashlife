@@ -492,59 +492,187 @@
             [0, 4]
         ];
 
+        // Still life seven-segment digits using 2x2 blocks
+        // Each block is a still life pattern in Conway's Game of Life
+        // Blocks are spaced 3 cells apart to avoid interference
+        // Each digit is 15 cells wide (0 to 14) and 20 cells tall (0 to 19)
+        const DIGIT_CELL_WIDTH = 15;   // Actual digit width in cells
+        const DIGIT_SPACING = 3;       // Spacing between digits
+        const DIGIT_WIDTH = DIGIT_CELL_WIDTH + DIGIT_SPACING;  // Total width per digit (18)
+        const COLON_CELL_WIDTH = 2;    // Actual colon width in cells
+        const COLON_SPACING = 4;       // Spacing for colon
+        const COLON_WIDTH = COLON_CELL_WIDTH + COLON_SPACING;  // Total width per colon (6)
+        const DIGIT_HEIGHT = 20;       // Digit height in cells
+
+        function createBlock(x, y) {
+            // Creates a 2x2 block (still life) at position (x, y)
+            return [[x, y], [x+1, y], [x, y+1], [x+1, y+1]];
+        }
+
+        // Seven-segment still life digits using blocks
+        // Segments layout:
+        //   AAA
+        //  F   B
+        //  F   B
+        //   GGG
+        //  E   C
+        //  E   C
+        //   DDD
+        const stillLifeSegments = {
+            // Segment A (top horizontal) - 3 blocks
+            A: (ox, oy) => [
+                ...createBlock(ox + 4, oy),
+                ...createBlock(ox + 7, oy),
+                ...createBlock(ox + 10, oy)
+            ],
+            // Segment B (top-right vertical) - 2 blocks
+            B: (ox, oy) => [
+                ...createBlock(ox + 13, oy + 3),
+                ...createBlock(ox + 13, oy + 6)
+            ],
+            // Segment C (bottom-right vertical) - 2 blocks
+            C: (ox, oy) => [
+                ...createBlock(ox + 13, oy + 12),
+                ...createBlock(ox + 13, oy + 15)
+            ],
+            // Segment D (bottom horizontal) - 3 blocks
+            D: (ox, oy) => [
+                ...createBlock(ox + 4, oy + 18),
+                ...createBlock(ox + 7, oy + 18),
+                ...createBlock(ox + 10, oy + 18)
+            ],
+            // Segment E (bottom-left vertical) - 2 blocks
+            E: (ox, oy) => [
+                ...createBlock(ox, oy + 12),
+                ...createBlock(ox, oy + 15)
+            ],
+            // Segment F (top-left vertical) - 2 blocks
+            F: (ox, oy) => [
+                ...createBlock(ox, oy + 3),
+                ...createBlock(ox, oy + 6)
+            ],
+            // Segment G (middle horizontal) - 3 blocks
+            G: (ox, oy) => [
+                ...createBlock(ox + 4, oy + 9),
+                ...createBlock(ox + 7, oy + 9),
+                ...createBlock(ox + 10, oy + 9)
+            ]
+        };
+
+        // Define which segments are on for each digit
+        const digitSegments = {
+            0: ['A', 'B', 'C', 'D', 'E', 'F'],
+            1: ['B', 'C'],
+            2: ['A', 'B', 'G', 'E', 'D'],
+            3: ['A', 'B', 'G', 'C', 'D'],
+            4: ['F', 'G', 'B', 'C'],
+            5: ['A', 'F', 'G', 'C', 'D'],
+            6: ['A', 'F', 'G', 'E', 'C', 'D'],
+            7: ['A', 'B', 'C'],
+            8: ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
+            9: ['A', 'B', 'C', 'D', 'F', 'G']
+        };
+
+        // Generate still life digit pattern
+        function generateStillLifeDigit(digit, offsetX, offsetY) {
+            const pattern = [];
+            const segments = digitSegments[digit];
+            for (const seg of segments) {
+                pattern.push(...stillLifeSegments[seg](offsetX, offsetY));
+            }
+            return pattern;
+        }
+
+        // Still life colon pattern using blocks
+        function generateStillLifeColon(offsetX, offsetY) {
+            return [
+                ...createBlock(offsetX, offsetY + 6),
+                ...createBlock(offsetX, offsetY + 12)
+            ];
+        }
+
+        // Generate static still life clock pattern for HH:MM (without seconds)
+        function generateStaticStillLifeClock(hours, minutes) {
+            const pattern = [];
+            
+            // Format: HH:MM = 4 digits + 1 colon
+            const totalWidth = 4 * DIGIT_WIDTH + 1 * COLON_WIDTH;
+            let startX = -Math.floor(totalWidth / 2);
+            const startY = -Math.floor(DIGIT_HEIGHT / 2);
+            
+            // Hour tens digit
+            pattern.push(...generateStillLifeDigit(Math.floor(hours / 10), startX, startY));
+            startX += DIGIT_WIDTH;
+            
+            // Hour ones digit
+            pattern.push(...generateStillLifeDigit(hours % 10, startX, startY));
+            startX += DIGIT_WIDTH;
+            
+            // Colon
+            pattern.push(...generateStillLifeColon(startX, startY));
+            startX += COLON_WIDTH;
+            
+            // Minute tens digit
+            pattern.push(...generateStillLifeDigit(Math.floor(minutes / 10), startX, startY));
+            startX += DIGIT_WIDTH;
+            
+            // Minute ones digit
+            pattern.push(...generateStillLifeDigit(minutes % 10, startX, startY));
+            
+            return pattern;
+        }
+
         // Live clock state
         let isClockMode = false;
         let clockIntervalId = null;
         let lastClockTime = '';
 
-        // Generate clock display pattern for HH:MM:SS
+        // Generate clock display pattern for HH:MM:SS using still life blocks
         function generateClockPattern(hours, minutes, seconds) {
             const pattern = [];
-            const digitWidth = 6;  // 5 cells + 1 spacing
-            const colonWidth = 2;  // 1 cell + 1 spacing
             
             // Calculate starting X position to center the clock
-            // Format: HH:MM:SS = 6 digits + 2 colons = 6*6 + 2*2 = 40 cells
-            const totalWidth = 6 * digitWidth + 2 * colonWidth;
+            // Format: HH:MM:SS = 6 digits + 2 colons
+            const totalWidth = 6 * DIGIT_WIDTH + 2 * COLON_WIDTH;
             let startX = -Math.floor(totalWidth / 2);
-            const startY = -3; // Center vertically (7 cells tall, so -3 to +3)
+            const startY = -Math.floor(DIGIT_HEIGHT / 2);
             
             // Hour tens digit
             const h1 = Math.floor(hours / 10);
-            addDigitToPattern(pattern, h1, startX, startY);
-            startX += digitWidth;
+            pattern.push(...generateStillLifeDigit(h1, startX, startY));
+            startX += DIGIT_WIDTH;
             
             // Hour ones digit
             const h2 = hours % 10;
-            addDigitToPattern(pattern, h2, startX, startY);
-            startX += digitWidth;
+            pattern.push(...generateStillLifeDigit(h2, startX, startY));
+            startX += DIGIT_WIDTH;
             
             // First colon
-            addColonToPattern(pattern, startX, startY);
-            startX += colonWidth;
+            pattern.push(...generateStillLifeColon(startX, startY));
+            startX += COLON_WIDTH;
             
             // Minute tens digit
             const m1 = Math.floor(minutes / 10);
-            addDigitToPattern(pattern, m1, startX, startY);
-            startX += digitWidth;
+            pattern.push(...generateStillLifeDigit(m1, startX, startY));
+            startX += DIGIT_WIDTH;
             
             // Minute ones digit
             const m2 = minutes % 10;
-            addDigitToPattern(pattern, m2, startX, startY);
-            startX += digitWidth;
+            pattern.push(...generateStillLifeDigit(m2, startX, startY));
+            startX += DIGIT_WIDTH;
             
             // Second colon
-            addColonToPattern(pattern, startX, startY);
-            startX += colonWidth;
+            pattern.push(...generateStillLifeColon(startX, startY));
+            startX += COLON_WIDTH;
             
             // Second tens digit
             const s1 = Math.floor(seconds / 10);
-            addDigitToPattern(pattern, s1, startX, startY);
-            startX += digitWidth;
+            pattern.push(...generateStillLifeDigit(s1, startX, startY));
+            startX += DIGIT_WIDTH;
             
             // Second ones digit
             const s2 = seconds % 10;
-            addDigitToPattern(pattern, s2, startX, startY);
+            pattern.push(...generateStillLifeDigit(s2, startX, startY));
             
             return pattern;
         }
@@ -680,7 +808,13 @@
                         stopClockMode();
                     }
                     const pattern = e.target.dataset.pattern;
-                    addPattern(patterns[pattern]);
+                    if (pattern === 'digitalClock') {
+                        // Generate still life digital clock pattern showing 12:00
+                        const clockPattern = generateStaticStillLifeClock(12, 0);
+                        addPattern(clockPattern);
+                    } else {
+                        addPattern(patterns[pattern]);
+                    }
                 });
             });
 
