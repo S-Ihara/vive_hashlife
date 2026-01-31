@@ -313,6 +313,9 @@
         let actualFps = 0;
         let fpsCounter = 0;
         let lastFpsTime = Date.now();
+        
+        // Constants for the Game of Life Clock pattern
+        const GOL_CLOCK_DEFAULT_CELL_SIZE = 0.5;  // Optimal cell size to view the large clock pattern
 
         const patterns = {
             glider: [[1, 0], [2, 1], [0, 2], [1, 2], [2, 2]],
@@ -833,7 +836,7 @@
                 }
                 
                 // Adjust cell size to see the clock pattern (it's very large)
-                cellSize = 0.5;
+                cellSize = GOL_CLOCK_DEFAULT_CELL_SIZE;
                 document.getElementById('cellSizeValue').textContent = cellSize.toFixed(1);
                 document.getElementById('cellSizeSlider').value = cellSize;
                 
@@ -852,7 +855,10 @@
                 
             } catch (error) {
                 console.error('Failed to load GoL Clock pattern:', error);
-                alert('Failed to load the Game of Life Clock pattern. Check console for details.');
+                const errorMessage = error.message.includes('Failed to load RLE')
+                    ? 'Could not load the pattern file. Please ensure the patterns/digital-clock.rle file exists.'
+                    : `Failed to load the Game of Life Clock pattern: ${error.message}`;
+                alert(errorMessage);
             } finally {
                 golClockBtn.textContent = originalText;
                 golClockBtn.disabled = false;
