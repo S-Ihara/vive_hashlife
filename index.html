@@ -602,7 +602,7 @@
                     
                     // Use a color gradient: sparse = darker green, dense = bright green
                     const green = Math.floor(136 + 119 * alpha); // 136 (0x88) to 255 (0xff)
-                    const red = Math.floor(0 + 136 * (1 - alpha)); // Some red tint for low density
+                    const red = Math.floor(136 * (1 - alpha)); // Some red tint for low density
                     ctx.fillStyle = `rgba(${red}, ${green}, 136, ${0.3 + 0.7 * alpha})`;
                     
                     ctx.fillRect(screenX, screenY, Math.max(1, screenSize), Math.max(1, screenSize));
