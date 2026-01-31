@@ -247,7 +247,7 @@
                         <span>Cell Size</span>
                         <span id="cellSizeValue">8</span>
                     </label>
-                    <input type="range" id="cellSizeSlider" min="2" max="40" value="8">
+                    <input type="range" id="cellSizeSlider" min="0.5" max="40" value="8" step="0.5">
                 </div>
             </div>
 
@@ -382,7 +382,7 @@
             });
 
             document.getElementById('cellSizeSlider').addEventListener('input', (e) => {
-                cellSize = parseInt(e.target.value);
+                cellSize = parseFloat(e.target.value);
                 document.getElementById('cellSizeValue').textContent = cellSize;
                 resizeCanvas();
             });
@@ -411,12 +411,14 @@
                 e.preventDefault();
                 
                 // Determine zoom direction: negative deltaY means zoom in, positive means zoom out
-                const zoomDelta = e.deltaY > 0 ? -1 : 1;
-                const newCellSize = Math.max(2, Math.min(40, cellSize + zoomDelta));
+                // Use multiplicative scaling for smoother zoom at small sizes
+                const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+                const newCellSize = Math.max(0.5, Math.min(40, cellSize * zoomFactor));
                 
                 if (newCellSize !== cellSize) {
                     cellSize = newCellSize;
-                    document.getElementById('cellSizeValue').textContent = cellSize;
+                    // Round for display
+                    document.getElementById('cellSizeValue').textContent = cellSize.toFixed(1);
                     document.getElementById('cellSizeSlider').value = cellSize;
                     resizeCanvas();
                 }
@@ -523,43 +525,88 @@
             ctx.fillStyle = '#0f0f1e';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Draw grid
-            ctx.strokeStyle = '#1a1a3e';
-            ctx.lineWidth = 1;
-            
             const startX = -offsetX;
             const startY = -offsetY;
             const endX = startX + Math.ceil(canvas.width / cellSize);
             const endY = startY + Math.ceil(canvas.height / cellSize);
             
-            // Get live cells in view
-            const cells = universe.getCells(startX - 1, startY - 1, endX + 1, endY + 1);
+            // Determine the minimum render size in world units
+            // When zoomed out (small cellSize), we aggregate cells into larger regions
+            const minRenderSize = Math.max(1, Math.ceil(1 / cellSize));
             
-            // Draw cells
-            ctx.fillStyle = '#00ff88';
-            for (let i = 0; i < cells.length; i += 2) {
-                const x = cells[i];
-                const y = cells[i + 1];
+            // Use area-based rendering when zoomed out, cell-based when zoomed in
+            if (cellSize >= 2) {
+                // Traditional cell-based rendering for zoomed-in views
+                const cells = universe.getCells(
+                    Math.floor(startX) - 1, 
+                    Math.floor(startY) - 1, 
+                    Math.ceil(endX) + 1, 
+                    Math.ceil(endY) + 1
+                );
                 
-                const screenX = (x + offsetX) * cellSize;
-                const screenY = (y + offsetY) * cellSize;
+                ctx.fillStyle = '#00ff88';
+                for (let i = 0; i < cells.length; i += 2) {
+                    const x = cells[i];
+                    const y = cells[i + 1];
+                    
+                    const screenX = (x + offsetX) * cellSize;
+                    const screenY = (y + offsetY) * cellSize;
+                    
+                    ctx.fillRect(screenX, screenY, cellSize, cellSize);
+                }
                 
-                ctx.fillRect(screenX, screenY, cellSize, cellSize);
-            }
-            
-            // Draw grid lines
-            for (let x = 0; x <= Math.ceil(canvas.width / cellSize); x++) {
-                ctx.beginPath();
-                ctx.moveTo(x * cellSize, 0);
-                ctx.lineTo(x * cellSize, canvas.height);
-                ctx.stroke();
-            }
-            
-            for (let y = 0; y <= Math.ceil(canvas.height / cellSize); y++) {
-                ctx.beginPath();
-                ctx.moveTo(0, y * cellSize);
-                ctx.lineTo(canvas.width, y * cellSize);
-                ctx.stroke();
+                // Draw grid lines only when cells are large enough to see
+                if (cellSize >= 4) {
+                    ctx.strokeStyle = '#1a1a3e';
+                    ctx.lineWidth = 1;
+                    
+                    for (let x = 0; x <= Math.ceil(canvas.width / cellSize); x++) {
+                        ctx.beginPath();
+                        ctx.moveTo(x * cellSize, 0);
+                        ctx.lineTo(x * cellSize, canvas.height);
+                        ctx.stroke();
+                    }
+                    
+                    for (let y = 0; y <= Math.ceil(canvas.height / cellSize); y++) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y * cellSize);
+                        ctx.lineTo(canvas.width, y * cellSize);
+                        ctx.stroke();
+                    }
+                }
+            } else {
+                // Area-based rendering for zoomed-out views
+                // Use the quadtree structure for efficient rendering
+                const regions = universe.getRenderRegions(
+                    Math.floor(startX) - minRenderSize,
+                    Math.floor(startY) - minRenderSize,
+                    Math.ceil(endX) + minRenderSize,
+                    Math.ceil(endY) + minRenderSize,
+                    minRenderSize
+                );
+                
+                // Draw regions with varying opacity based on density
+                for (let i = 0; i < regions.length; i += 4) {
+                    const x = regions[i];
+                    const y = regions[i + 1];
+                    const size = regions[i + 2];
+                    const density = regions[i + 3];
+                    
+                    const screenX = (x + offsetX) * cellSize;
+                    const screenY = (y + offsetY) * cellSize;
+                    const screenSize = size * cellSize;
+                    
+                    // Color intensity based on density
+                    // At full density (1.0), use full green; lower density = more transparent
+                    const alpha = Math.min(1.0, density);
+                    
+                    // Use a color gradient: sparse = darker green, dense = bright green
+                    const green = Math.floor(136 + 119 * alpha); // 136 (0x88) to 255 (0xff)
+                    const red = Math.floor(136 * (1 - alpha)); // Some red tint for low density
+                    ctx.fillStyle = `rgba(${red}, ${green}, 136, ${0.3 + 0.7 * alpha})`;
+                    
+                    ctx.fillRect(screenX, screenY, Math.max(1, screenSize), Math.max(1, screenSize));
+                }
             }
         }
 

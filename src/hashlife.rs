@@ -510,6 +510,115 @@ impl Universe {
     pub fn population(&self) -> u64 {
         self.root.population
     }
+
+    /// Get the root level of the universe (for determining node sizes)
+    pub fn root_level(&self) -> u8 {
+        self.root.level
+    }
+
+    /// Collect renderable regions from the quadtree.
+    /// This uses the tree structure to efficiently skip empty regions and aggregate small areas.
+    /// 
+    /// Returns a vector of (x, y, size, density) tuples where:
+    /// - x, y: world coordinates of the top-left corner of the region
+    /// - size: the side length of the region in world units
+    /// - density: population divided by area (0.0 to 1.0)
+    /// 
+    /// min_render_size: minimum region size in world units to render
+    /// (smaller nodes will be aggregated as density)
+    pub fn collect_render_regions(
+        &self,
+        view_x_min: i64,
+        view_y_min: i64,
+        view_x_max: i64,
+        view_y_max: i64,
+        min_render_size: u32,
+    ) -> Vec<(i64, i64, u32, f32)> {
+        let mut result = Vec::new();
+        let size = 1i64 << self.root.level;
+        let half_size = size / 2;
+        
+        self.collect_render_regions_recursive(
+            &self.root,
+            -half_size,
+            -half_size,
+            view_x_min,
+            view_y_min,
+            view_x_max,
+            view_y_max,
+            min_render_size,
+            &mut result,
+        );
+        
+        result
+    }
+
+    fn collect_render_regions_recursive(
+        &self,
+        node: &Rc<Node>,
+        node_x: i64,
+        node_y: i64,
+        view_x_min: i64,
+        view_y_min: i64,
+        view_x_max: i64,
+        view_y_max: i64,
+        min_render_size: u32,
+        result: &mut Vec<(i64, i64, u32, f32)>,
+    ) {
+        // Skip if node is completely empty
+        if node.population == 0 {
+            return;
+        }
+
+        let node_size = 1i64 << node.level;
+        let node_x_max = node_x + node_size;
+        let node_y_max = node_y + node_size;
+
+        // Skip if node is completely outside the view
+        if node_x >= view_x_max || node_x_max <= view_x_min ||
+           node_y >= view_y_max || node_y_max <= view_y_min {
+            return;
+        }
+
+        // If node is small enough or is a leaf, emit it as a rendered region
+        if node_size as u32 <= min_render_size || node.level == 0 {
+            let area = (node_size * node_size) as f32;
+            let density = node.population as f32 / area;
+            result.push((node_x, node_y, node_size as u32, density));
+            return;
+        }
+
+        // Recurse into children
+        let NodeContent::Inner { nw, ne, sw, se, .. } = &node.content else {
+            unreachable!();
+        };
+
+        let half_size = node_size / 2;
+        let mid_x = node_x + half_size;
+        let mid_y = node_y + half_size;
+
+        // Recurse into each quadrant
+        self.collect_render_regions_recursive(
+            nw, node_x, node_y,
+            view_x_min, view_y_min, view_x_max, view_y_max,
+            min_render_size, result,
+        );
+        self.collect_render_regions_recursive(
+            ne, mid_x, node_y,
+            view_x_min, view_y_min, view_x_max, view_y_max,
+            min_render_size, result,
+        );
+        self.collect_render_regions_recursive(
+            sw, node_x, mid_y,
+            view_x_min, view_y_min, view_x_max, view_y_max,
+            min_render_size, result,
+        );
+        self.collect_render_regions_recursive(
+            se, mid_x, mid_y,
+            view_x_min, view_y_min, view_x_max, view_y_max,
+            min_render_size, result,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -593,5 +702,66 @@ mod tests {
         assert!(universe.get_cell(0, 1));
         assert!(universe.get_cell(1, 1));
         assert_eq!(universe.population(), 4);
+    }
+
+    #[test]
+    fn test_collect_render_regions_empty() {
+        let universe = Universe::new(4);
+        
+        // Empty universe should return no regions
+        let regions = universe.collect_render_regions(-100, -100, 100, 100, 1);
+        assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn test_collect_render_regions_single_cell() {
+        let mut universe = Universe::new(4);
+        universe.set_cell(0, 0, true);
+        
+        // Get regions at cell level (min_render_size = 1)
+        let regions = universe.collect_render_regions(-10, -10, 10, 10, 1);
+        
+        // Should return exactly one region with the single cell
+        assert_eq!(regions.len(), 1);
+        let (x, y, size, density) = regions[0];
+        assert_eq!(x, 0);
+        assert_eq!(y, 0);
+        assert_eq!(size, 1);
+        assert!((density - 1.0).abs() < 0.001); // Density should be 1.0 for a single alive cell
+    }
+
+    #[test]
+    fn test_collect_render_regions_aggregation() {
+        let mut universe = Universe::new(4);
+        
+        // Create a 2x2 block
+        universe.set_cell(0, 0, true);
+        universe.set_cell(1, 0, true);
+        universe.set_cell(0, 1, true);
+        universe.set_cell(1, 1, true);
+        
+        // Get regions at level 2 (aggregating 2x2 areas)
+        let regions = universe.collect_render_regions(-10, -10, 10, 10, 2);
+        
+        // Should return one or more regions
+        assert!(!regions.is_empty());
+        
+        // Total population across all regions should equal 4 cells' worth of density
+        let total_population: f32 = regions.iter()
+            .map(|(_, _, size, density)| (*size as f32 * *size as f32) * density)
+            .sum();
+        assert!((total_population - 4.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_collect_render_regions_outside_view() {
+        let mut universe = Universe::new(4);
+        universe.set_cell(100, 100, true);
+        
+        // View that doesn't include the cell
+        let regions = universe.collect_render_regions(-10, -10, 10, 10, 1);
+        
+        // Should return no regions since the cell is outside the view
+        assert!(regions.is_empty());
     }
 }
