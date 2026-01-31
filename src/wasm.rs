@@ -65,4 +65,45 @@ impl WasmUniverse {
         }
         cells
     }
+
+    /// Get renderable regions using the quadtree structure for efficient rendering.
+    /// 
+    /// This method is much more efficient than getCells for zoomed-out views because
+    /// it uses the hierarchical structure of the hashlife quadtree to:
+    /// - Skip empty regions entirely
+    /// - Aggregate small regions into density values
+    /// 
+    /// Returns a flat array of [x, y, size, density] tuples packed as f32:
+    /// - x, y: world coordinates (as f32)
+    /// - size: the side length of the region (as f32)
+    /// - density: population/area ratio (0.0 to 1.0)
+    /// 
+    /// min_render_size: minimum world-unit size for regions. Smaller regions are
+    /// aggregated and rendered based on density.
+    #[wasm_bindgen(js_name = getRenderRegions)]
+    pub fn get_render_regions(
+        &self,
+        view_x_min: i32,
+        view_y_min: i32,
+        view_x_max: i32,
+        view_y_max: i32,
+        min_render_size: u32,
+    ) -> Vec<f32> {
+        let regions = self.universe.collect_render_regions(
+            view_x_min as i64,
+            view_y_min as i64,
+            view_x_max as i64,
+            view_y_max as i64,
+            min_render_size,
+        );
+
+        let mut result = Vec::with_capacity(regions.len() * 4);
+        for (x, y, size, density) in regions {
+            result.push(x as f32);
+            result.push(y as f32);
+            result.push(size as f32);
+            result.push(density);
+        }
+        result
+    }
 }
