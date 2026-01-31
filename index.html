@@ -259,6 +259,7 @@
                 <button class="pattern-button" data-pattern="lwss">LWSS</button>
                 <button class="pattern-button" data-pattern="acorn">Acorn</button>
                 <button class="pattern-button" data-pattern="digitalClock">Digital Clock</button>
+                <button class="pattern-button clock-button" id="liveClockBtn">🕐 Live Clock</button>
             </div>
 
             <div class="control-group">
@@ -361,6 +362,267 @@
             ]
         };
 
+        // Seven-segment digit patterns for Live Clock
+        // Each digit is defined on a 5x7 grid (width x height)
+        // Segments: top, top-right, bottom-right, bottom, bottom-left, top-left, middle
+        const sevenSegmentDigits = {
+            0: [
+                // Top segment
+                [1, 0], [2, 0], [3, 0],
+                // Top-left segment  
+                [0, 1], [0, 2],
+                // Top-right segment
+                [4, 1], [4, 2],
+                // Bottom-left segment
+                [0, 4], [0, 5],
+                // Bottom-right segment
+                [4, 4], [4, 5],
+                // Bottom segment
+                [1, 6], [2, 6], [3, 6]
+            ],
+            1: [
+                // Top-right segment
+                [4, 1], [4, 2],
+                // Bottom-right segment
+                [4, 4], [4, 5]
+            ],
+            2: [
+                // Top segment
+                [1, 0], [2, 0], [3, 0],
+                // Top-right segment
+                [4, 1], [4, 2],
+                // Middle segment
+                [1, 3], [2, 3], [3, 3],
+                // Bottom-left segment
+                [0, 4], [0, 5],
+                // Bottom segment
+                [1, 6], [2, 6], [3, 6]
+            ],
+            3: [
+                // Top segment
+                [1, 0], [2, 0], [3, 0],
+                // Top-right segment
+                [4, 1], [4, 2],
+                // Middle segment
+                [1, 3], [2, 3], [3, 3],
+                // Bottom-right segment
+                [4, 4], [4, 5],
+                // Bottom segment
+                [1, 6], [2, 6], [3, 6]
+            ],
+            4: [
+                // Top-left segment
+                [0, 1], [0, 2],
+                // Top-right segment
+                [4, 1], [4, 2],
+                // Middle segment
+                [1, 3], [2, 3], [3, 3],
+                // Bottom-right segment
+                [4, 4], [4, 5]
+            ],
+            5: [
+                // Top segment
+                [1, 0], [2, 0], [3, 0],
+                // Top-left segment
+                [0, 1], [0, 2],
+                // Middle segment
+                [1, 3], [2, 3], [3, 3],
+                // Bottom-right segment
+                [4, 4], [4, 5],
+                // Bottom segment
+                [1, 6], [2, 6], [3, 6]
+            ],
+            6: [
+                // Top segment
+                [1, 0], [2, 0], [3, 0],
+                // Top-left segment
+                [0, 1], [0, 2],
+                // Middle segment
+                [1, 3], [2, 3], [3, 3],
+                // Bottom-left segment
+                [0, 4], [0, 5],
+                // Bottom-right segment
+                [4, 4], [4, 5],
+                // Bottom segment
+                [1, 6], [2, 6], [3, 6]
+            ],
+            7: [
+                // Top segment
+                [1, 0], [2, 0], [3, 0],
+                // Top-right segment
+                [4, 1], [4, 2],
+                // Bottom-right segment
+                [4, 4], [4, 5]
+            ],
+            8: [
+                // Top segment
+                [1, 0], [2, 0], [3, 0],
+                // Top-left segment
+                [0, 1], [0, 2],
+                // Top-right segment
+                [4, 1], [4, 2],
+                // Middle segment
+                [1, 3], [2, 3], [3, 3],
+                // Bottom-left segment
+                [0, 4], [0, 5],
+                // Bottom-right segment
+                [4, 4], [4, 5],
+                // Bottom segment
+                [1, 6], [2, 6], [3, 6]
+            ],
+            9: [
+                // Top segment
+                [1, 0], [2, 0], [3, 0],
+                // Top-left segment
+                [0, 1], [0, 2],
+                // Top-right segment
+                [4, 1], [4, 2],
+                // Middle segment
+                [1, 3], [2, 3], [3, 3],
+                // Bottom-right segment
+                [4, 4], [4, 5],
+                // Bottom segment
+                [1, 6], [2, 6], [3, 6]
+            ]
+        };
+
+        // Colon pattern for the clock
+        const colonPattern = [
+            [0, 2],
+            [0, 4]
+        ];
+
+        // Live clock state
+        let isClockMode = false;
+        let clockIntervalId = null;
+        let lastClockTime = '';
+
+        // Generate clock display pattern for HH:MM:SS
+        function generateClockPattern(hours, minutes, seconds) {
+            const pattern = [];
+            const digitWidth = 6;  // 5 cells + 1 spacing
+            const colonWidth = 2;  // 1 cell + 1 spacing
+            
+            // Calculate starting X position to center the clock
+            // Format: HH:MM:SS = 6 digits + 2 colons = 6*6 + 2*2 = 40 cells
+            const totalWidth = 6 * digitWidth + 2 * colonWidth;
+            let startX = -Math.floor(totalWidth / 2);
+            const startY = -3; // Center vertically (7 cells tall, so -3 to +3)
+            
+            // Hour tens digit
+            const h1 = Math.floor(hours / 10);
+            addDigitToPattern(pattern, h1, startX, startY);
+            startX += digitWidth;
+            
+            // Hour ones digit
+            const h2 = hours % 10;
+            addDigitToPattern(pattern, h2, startX, startY);
+            startX += digitWidth;
+            
+            // First colon
+            addColonToPattern(pattern, startX, startY);
+            startX += colonWidth;
+            
+            // Minute tens digit
+            const m1 = Math.floor(minutes / 10);
+            addDigitToPattern(pattern, m1, startX, startY);
+            startX += digitWidth;
+            
+            // Minute ones digit
+            const m2 = minutes % 10;
+            addDigitToPattern(pattern, m2, startX, startY);
+            startX += digitWidth;
+            
+            // Second colon
+            addColonToPattern(pattern, startX, startY);
+            startX += colonWidth;
+            
+            // Second tens digit
+            const s1 = Math.floor(seconds / 10);
+            addDigitToPattern(pattern, s1, startX, startY);
+            startX += digitWidth;
+            
+            // Second ones digit
+            const s2 = seconds % 10;
+            addDigitToPattern(pattern, s2, startX, startY);
+            
+            return pattern;
+        }
+
+        function addDigitToPattern(pattern, digit, offsetX, offsetY) {
+            const digitPattern = sevenSegmentDigits[digit];
+            for (const [x, y] of digitPattern) {
+                pattern.push([x + offsetX, y + offsetY]);
+            }
+        }
+
+        function addColonToPattern(pattern, offsetX, offsetY) {
+            for (const [x, y] of colonPattern) {
+                pattern.push([x + offsetX, y + offsetY]);
+            }
+        }
+
+        function updateClockDisplay() {
+            const now = new Date();
+            const hours = now.getHours();
+            const minutes = now.getMinutes();
+            const seconds = now.getSeconds();
+            
+            const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            
+            // Only update if time has changed
+            if (timeStr === lastClockTime) {
+                return;
+            }
+            lastClockTime = timeStr;
+            
+            // Clear and regenerate clock pattern
+            universe.clear();
+            const clockPattern = generateClockPattern(hours, minutes, seconds);
+            addPattern(clockPattern);
+        }
+
+        function startClockMode() {
+            isClockMode = true;
+            
+            // Stop any running simulation
+            if (isPlaying) {
+                togglePlayPause();
+            }
+            
+            // Update button text
+            const liveClockBtn = document.getElementById('liveClockBtn');
+            liveClockBtn.textContent = '⏹ Stop Clock';
+            
+            // Initial display
+            updateClockDisplay();
+            
+            // Update every second
+            clockIntervalId = setInterval(updateClockDisplay, 1000);
+        }
+
+        function stopClockMode() {
+            isClockMode = false;
+            lastClockTime = '';
+            
+            if (clockIntervalId) {
+                clearInterval(clockIntervalId);
+                clockIntervalId = null;
+            }
+            
+            // Update button text
+            const liveClockBtn = document.getElementById('liveClockBtn');
+            liveClockBtn.textContent = '🕐 Live Clock';
+        }
+
+        function toggleClockMode() {
+            if (isClockMode) {
+                stopClockMode();
+            } else {
+                startClockMode();
+            }
+        }
+
         async function main() {
             await init();
 
@@ -393,6 +655,9 @@
             document.getElementById('stepBtn').addEventListener('click', step);
             document.getElementById('clearBtn').addEventListener('click', clear);
             document.getElementById('randomBtn').addEventListener('click', randomize);
+            
+            // Live Clock button
+            document.getElementById('liveClockBtn').addEventListener('click', toggleClockMode);
 
             // Sliders
             document.getElementById('speedSlider').addEventListener('input', (e) => {
@@ -407,9 +672,13 @@
                 resizeCanvas();
             });
 
-            // Patterns
-            document.querySelectorAll('.pattern-button').forEach(button => {
+            // Patterns (excluding live clock button)
+            document.querySelectorAll('.pattern-button[data-pattern]').forEach(button => {
                 button.addEventListener('click', (e) => {
+                    // Stop clock mode when loading a pattern
+                    if (isClockMode) {
+                        stopClockMode();
+                    }
                     const pattern = e.target.dataset.pattern;
                     addPattern(patterns[pattern]);
                 });
@@ -417,6 +686,11 @@
 
             // Canvas click
             canvas.addEventListener('click', (e) => {
+                // Stop clock mode when clicking on canvas
+                if (isClockMode) {
+                    stopClockMode();
+                }
+                
                 const rect = canvas.getBoundingClientRect();
                 const x = Math.floor((e.clientX - rect.left) / cellSize) - offsetX;
                 const y = Math.floor((e.clientY - rect.top) / cellSize) - offsetY;
@@ -470,6 +744,10 @@
             btn.textContent = isPlaying ? 'Pause' : 'Play';
             
             if (isPlaying) {
+                // Stop clock mode when starting simulation
+                if (isClockMode) {
+                    stopClockMode();
+                }
                 lastFrameTime = performance.now();
                 animate();
             } else if (animationId) {
@@ -479,18 +757,30 @@
         }
 
         function step() {
+            // Stop clock mode when stepping
+            if (isClockMode) {
+                stopClockMode();
+            }
             universe.step();
             updateStats();
             render();
         }
 
         function clear() {
+            // Stop clock mode when clearing
+            if (isClockMode) {
+                stopClockMode();
+            }
             universe.clear();
             updateStats();
             render();
         }
 
         function randomize() {
+            // Stop clock mode when randomizing
+            if (isClockMode) {
+                stopClockMode();
+            }
             clear();
             const width = Math.floor(canvas.width / cellSize);
             const height = Math.floor(canvas.height / cellSize);
