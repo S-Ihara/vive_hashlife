@@ -258,8 +258,9 @@
                 <button class="pattern-button" data-pattern="pulsar">Pulsar</button>
                 <button class="pattern-button" data-pattern="lwss">LWSS</button>
                 <button class="pattern-button" data-pattern="acorn">Acorn</button>
-                <button class="pattern-button" data-pattern="digitalClock">Digital Clock</button>
+                <button class="pattern-button" data-pattern="digitalClock">Digital Clock (Static)</button>
                 <button class="pattern-button clock-button" id="liveClockBtn">🕐 Live Clock</button>
+                <button class="pattern-button" id="golClockBtn">⏰ GoL Clock Pattern</button>
             </div>
 
             <div class="control-group">
@@ -288,7 +289,9 @@
                     <kbd>Space</kbd> to play/pause<br>
                     <kbd>S</kbd> to step<br>
                     <kbd>C</kbd> to clear<br>
-                    <kbd>R</kbd> to randomize
+                    <kbd>R</kbd> to randomize<br><br>
+                    <strong>⏰ GoL Clock Pattern:</strong><br>
+                    A true Game of Life clock where digits advance through GoL rules (~23k gens/min).
                 </div>
             </div>
         </div>
@@ -310,6 +313,9 @@
         let actualFps = 0;
         let fpsCounter = 0;
         let lastFpsTime = Date.now();
+        
+        // Constants for the Game of Life Clock pattern
+        const GOL_CLOCK_DEFAULT_CELL_SIZE = 0.5;  // Optimal cell size to view the large clock pattern
 
         const patterns = {
             glider: [[1, 0], [2, 1], [0, 2], [1, 2], [2, 2]],
@@ -690,6 +696,175 @@
             }
         }
 
+        /**
+         * Parse RLE (Run Length Encoded) pattern format
+         * RLE format: 
+         * - Header line: x = <width>, y = <height>, rule = B3/S23
+         * - Optional position: #CXRLE Pos=<x>,<y>
+         * - Pattern data: numbers represent run counts, 'b' = dead, 'o' = alive, '$' = end of row, '!' = end
+         * 
+         * @param {string} rleContent - The RLE file content
+         * @returns {Array<[number, number]>} Array of [x, y] coordinates for live cells
+         */
+        function parseRLE(rleContent) {
+            const cells = [];
+            const lines = rleContent.split('\n');
+            
+            let startX = 0;
+            let startY = 0;
+            let patternData = '';
+            let headerParsed = false;
+            
+            for (const line of lines) {
+                const trimmed = line.trim();
+                
+                // Skip empty lines
+                if (!trimmed) continue;
+                
+                // Parse CXRLE position comment
+                if (trimmed.startsWith('#CXRLE')) {
+                    const posMatch = trimmed.match(/Pos=(-?\d+),(-?\d+)/);
+                    if (posMatch) {
+                        startX = parseInt(posMatch[1], 10);
+                        startY = parseInt(posMatch[2], 10);
+                    }
+                    continue;
+                }
+                
+                // Skip other comment lines
+                if (trimmed.startsWith('#')) continue;
+                
+                // Parse header line
+                if (trimmed.startsWith('x') || trimmed.startsWith('x =')) {
+                    headerParsed = true;
+                    continue;
+                }
+                
+                // Accumulate pattern data
+                if (headerParsed) {
+                    patternData += trimmed;
+                }
+            }
+            
+            // Parse the pattern data
+            let x = startX;
+            let y = startY;
+            let runCount = 0;
+            
+            for (let i = 0; i < patternData.length; i++) {
+                const char = patternData[i];
+                
+                // Parse digits for run count
+                if (char >= '0' && char <= '9') {
+                    runCount = runCount * 10 + parseInt(char, 10);
+                    continue;
+                }
+                
+                // Get the actual count (minimum 1)
+                const count = runCount > 0 ? runCount : 1;
+                runCount = 0;
+                
+                if (char === 'b') {
+                    // Dead cells - just advance x
+                    x += count;
+                } else if (char === 'o') {
+                    // Live cells - add to cells array
+                    for (let j = 0; j < count; j++) {
+                        cells.push([x, y]);
+                        x++;
+                    }
+                } else if (char === '$') {
+                    // End of row(s)
+                    x = startX;
+                    y += count;
+                } else if (char === '!') {
+                    // End of pattern
+                    break;
+                }
+                // Ignore other characters (whitespace, etc.)
+            }
+            
+            return cells;
+        }
+
+        /**
+         * Load an RLE pattern file from a URL
+         * @param {string} url - URL of the RLE file
+         * @returns {Promise<Array<[number, number]>>} Promise resolving to array of cell coordinates
+         */
+        async function loadRLEPattern(url) {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to load RLE pattern: ${response.status}`);
+            }
+            const content = await response.text();
+            return parseRLE(content);
+        }
+
+        /**
+         * Load the Game of Life Digital Clock pattern
+         * This pattern is a true GoL clock that advances through GoL rules
+         */
+        async function loadGoLClockPattern() {
+            const golClockBtn = document.getElementById('golClockBtn');
+            const originalText = golClockBtn.textContent;
+            
+            try {
+                golClockBtn.textContent = 'Loading...';
+                golClockBtn.disabled = true;
+                
+                // Stop clock mode if active
+                if (isClockMode) {
+                    stopClockMode();
+                }
+                
+                // Load the RLE pattern
+                const cells = await loadRLEPattern('./patterns/digital-clock.rle');
+                
+                console.log(`Loaded GoL Clock pattern with ${cells.length} cells`);
+                
+                // Clear and add the pattern
+                universe.clear();
+                
+                // Add cells in batches for better performance
+                const batchSize = 10000;
+                for (let i = 0; i < cells.length; i += batchSize) {
+                    const batch = cells.slice(i, i + batchSize);
+                    for (const [x, y] of batch) {
+                        universe.setCell(x, y, true);
+                    }
+                }
+                
+                // Adjust cell size to see the clock pattern (it's very large)
+                cellSize = GOL_CLOCK_DEFAULT_CELL_SIZE;
+                document.getElementById('cellSizeValue').textContent = cellSize.toFixed(1);
+                document.getElementById('cellSizeSlider').value = cellSize;
+                
+                // Center the view on the clock display area
+                // The clock display is roughly in the center of the pattern
+                offsetX = Math.floor(canvas.width / 2 / cellSize);
+                offsetY = Math.floor(canvas.height / 2 / cellSize);
+                
+                updateStats();
+                render();
+                
+                // Show success message
+                console.log('GoL Clock pattern loaded successfully!');
+                console.log('Press Play to see the clock advance through Game of Life rules.');
+                console.log('Note: The clock requires ~23,000 generations per minute to update.');
+                
+            } catch (error) {
+                console.error('Failed to load GoL Clock pattern:', error);
+                const errorMessage = error.message.includes('Failed to load RLE')
+                    ? 'Could not load the pattern file. Please ensure the patterns/digital-clock.rle file exists.'
+                    : `Failed to load the Game of Life Clock pattern: ${error.message}`;
+                alert(errorMessage);
+            } finally {
+                golClockBtn.textContent = originalText;
+                golClockBtn.disabled = false;
+            }
+        }
+
         function updateClockDisplay() {
             const now = new Date();
             const hours = now.getHours();
@@ -786,6 +961,9 @@
             
             // Live Clock button
             document.getElementById('liveClockBtn').addEventListener('click', toggleClockMode);
+            
+            // GoL Clock pattern button
+            document.getElementById('golClockBtn').addEventListener('click', loadGoLClockPattern);
 
             // Sliders
             document.getElementById('speedSlider').addEventListener('input', (e) => {

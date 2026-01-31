@@ -17,6 +17,7 @@ Conway's Game of Life implementation in Rust with WebAssembly, deployable to Git
   - Pulsar
   - LWSS (Lightweight Spaceship)
   - Acorn
+- ⏰ **Game of Life Digital Clock** - A true digital clock implemented in Conway's Game of Life where digits advance through GoL rules (based on [Code Golf challenge #88783](https://codegolf.stackexchange.com/questions/88783/build-a-digital-clock-in-conways-game-of-life))
 - 📊 **Live statistics** - Track generation count, population, and FPS
 - ⌨️ **Keyboard shortcuts** - Quick controls for power users
 
